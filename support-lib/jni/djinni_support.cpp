@@ -30,16 +30,6 @@ static JavaVM * g_cachedJVM;
 
 void jniInit(JavaVM * jvm) {
     g_cachedJVM = jvm;
-
-    try {
-        for (const auto & kv : JniClassInitializer::Registration::get_all()) {
-            kv.second->init();
-        }
-    } catch (const std::exception & e) {
-        // Default exception handling only, since non-default might not be safe if init
-        // is incomplete.
-        jniDefaultSetPendingFromCurrent(jniGetThreadEnv(), __func__);
-    }
 }
 
 void jniShutdown() {
@@ -122,7 +112,7 @@ void jniThrowCppFromJavaException(JNIEnv * env, jthrowable java_exception) {
 namespace { // anonymous namespace to guard the struct below
 struct SystemClassInfo {
     // This is a singleton class - an instance will be constructed by
-    // JniClassInitializer::init_all() at library init time.
+    // JniClass::get() at first access time.
     const GlobalRef<jclass> clazz { jniFindClass("java/lang/System") };
     const jmethodID staticmethIdentityHashCode { jniGetStaticMethodID(clazz.get(),
             "identityHashCode", "(Ljava/lang/Object;)I") };

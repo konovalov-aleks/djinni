@@ -166,46 +166,8 @@ void jniThrowAssertionError(JNIEnv * env, const char * file, int line, const cha
 #define DJINNI_ASSERT(check, env) DJINNI_ASSERT_MSG(check, env, #check)
 
 /*
- * Helper for JniClassInitializer.
- */
-template <class Key, class T>
-class static_registration {
-public:
-    using registration_map = std::unordered_map<Key, T *>;
-    static registration_map get_all() {
-        const std::lock_guard<std::mutex> lock(get_mutex());
-        return get_map();
-    }
-    static_registration(const Key & key, T * obj) : m_key(key) {
-        const std::lock_guard<std::mutex> lock(get_mutex());
-        get_map().emplace(key, obj);
-    }
-    ~static_registration() {
-        const std::lock_guard<std::mutex> lock(get_mutex());
-        get_map().erase(m_key);
-    }
-private:
-    const Key m_key;
-    static registration_map & get_map()   { static registration_map m; return m;   }
-    static std::mutex       & get_mutex() { static std::mutex mtx;     return mtx; }
-};
-
-/*
- * Helper for JniClass. (This can't be a subclass because it needs to not be templatized.)
- */
-class JniClassInitializer {
-private:
-    using Registration = static_registration<void *, const JniClassInitializer>;
-    const std::function<void()> init;
-    const Registration reg;
-    JniClassInitializer(const std::function<void()> & init) : init(init), reg(this, this) {}
-    template <class C> friend class JniClass;
-    friend void jniInit(JavaVM *);
-};
-
-/*
  * Each instantiation of this template produces a singleton object of type C which
- * will be initialized by djinni::jniInit(). For example:
+ * will be initialized on first access. For example:
  *
  * struct JavaFooInfo {
  *     jmethodID foo;
@@ -215,37 +177,15 @@ private:
  * To use this in a JNI function or callback, invoke:
  *
  *     CallVoidMethod(object, JniClass<JavaFooInfo>::get().foo, ...);
- *
- * This uses C++'s template instantiation behavior to guarantee that any T for which
- * JniClass<T>::get() is *used* anywhere in the program will be *initialized* by init_all().
- * Therefore, it's always safe to compile in wrappers for all known Java types - the library
- * will only depend on the presence of those actually needed.
  */
 template <class C>
 class JniClass {
 public:
     static const C & get() {
-        (void)s_initializer; // ensure that initializer is actually instantiated
-        assert(s_singleton);
-        return *s_singleton;
-    }
-
-private:
-    static const JniClassInitializer s_initializer;
-    static std::unique_ptr<C> s_singleton;
-
-    static void allocate() {
-        // We can't use make_unique here, because C will have a private constructor and
-        // list JniClass as a friend; so we have to allocate it by hand.
-        s_singleton = std::unique_ptr<C>(new C());
+        static C s_singleton;
+        return s_singleton;
     }
 };
-
-template <class C>
-const JniClassInitializer JniClass<C>::s_initializer ( allocate );
-
-template <class C>
-std::unique_ptr<C> JniClass<C>::s_singleton;
 
 /*
  * Exception-checking helpers. These will throw if an exception is pending.
