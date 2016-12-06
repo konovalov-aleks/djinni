@@ -46,6 +46,10 @@ void jniShutdown() {
     g_cachedJVM = nullptr;
 }
 
+
+//Modified by Anton K. :  see https://github.com/dropbox/djinni/issues/219
+//Before...
+/*
 JNIEnv * jniGetThreadEnv() {
     assert(g_cachedJVM);
     JNIEnv * env = nullptr;
@@ -55,6 +59,21 @@ JNIEnv * jniGetThreadEnv() {
         std::abort();
     }
 
+    return env;
+}*/
+//After...
+JNIEnv * jniGetThreadEnv() {
+    assert(g_cachedJVM);
+    JNIEnv * env = nullptr;
+    jint get_res = g_cachedJVM->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (get_res != 0 || !env) {
+        get_res = g_cachedJVM->AttachCurrentThread(&env, NULL);
+        if (get_res != 0 || !env) {
+            // :(
+            std::abort();
+        }
+    }
+    
     return env;
 }
 
