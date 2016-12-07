@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <boost/thread/tss.hpp>
 
 static_assert(sizeof(jlong) >= sizeof(void*), "must be able to fit a void* into a jlong");
 
@@ -36,11 +37,34 @@ void jniShutdown() {
     g_cachedJVM = nullptr;
 }
 
+namespace {
+
+class AutoThreadDetacher
+{
+public:
+    ~AutoThreadDetacher()
+    {
+        if(g_cachedJVM)
+            g_cachedJVM->DetachCurrentThread();
+    }
+};
+
+boost::thread_specific_ptr<AutoThreadDetacher> thread_detacher;
+
+} // namespace
+
 JNIEnv * jniGetThreadEnv() {
     assert(g_cachedJVM);
     JNIEnv * env = nullptr;
     const jint get_res = g_cachedJVM->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
-    if (get_res != 0 || !env) {
+    if (get_res == JNI_EDETACHED) {
+        if (g_cachedJVM->AttachCurrentThread(&env, NULL) != 0)
+        {
+            // :(
+           std::abort();
+        }
+        thread_detacher.reset(new AutoThreadDetacher());
+    } else if (get_res != JNI_OK || !env) {
         // :(
         std::abort();
     }
